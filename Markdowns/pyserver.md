@@ -1,14 +1,22 @@
 # pyserver — Raw Python HTTP Server
 
 **Location:** `src/pyserver/`
-**Status:** Complete (barebones v1)
+**Status:** v2
 **Dependencies:** None — stdlib only (`http.server`, `os`)
 
 ---
 
 ## What It Does
 
-Serves a single `GET /` endpoint that returns `Hello, World!` as plain text. Any other path returns a 404. Binds to `0.0.0.0` so it's reachable from any device on the same LAN (e.g. your phone).
+Two routes, both reachable from any device on the same LAN:
+
+| Route | Response | Content-Type |
+|-------|----------|--------------|
+| `GET /` | `Hello, World!` | `text/plain` |
+| `GET /hello` | Rendered HTML page with an `<h1>` heading | `text/html` |
+| Anything else | `Not Found` | `text/plain` (404) |
+
+Binds to `0.0.0.0` so phones on the same Wi-Fi can reach it.
 
 ---
 
@@ -105,9 +113,140 @@ LAN:     run `ipconfig getifaddr en0` to get your IP, then open http://<IP>:8080
 
 ---
 
+## Function Reference
+
+### Functions you defined
+
+#### `do_GET(self)` — `HelloHandler`
+```python
+def do_GET(self):
+```
+Called automatically by the framework whenever a `GET` request arrives. You never call this yourself. The dispatch works like this internally:
+
+```python
+method = getattr(self, 'do_' + self.command)  # self.command = "GET"
+method()                                        # calls do_GET()
+```
+
+`self.path` contains the URL path from the request line (e.g. `"/"` or `"/hello"`). The method branches on it to decide what response to send.
+
+---
+
+### Functions/methods you called
+
+#### `os.environ.get(key, default)`
+```python
+port = int(os.environ.get("PORT", 8080))
+```
+`os.environ` is a dict-like object mapping environment variable names to their string values. `.get(key, default)` returns the value for `key` if it exists in the environment, or `default` if it doesn't. This is the standard way to make behaviour configurable without hardcoding values.
+
+---
+
+#### `int(x)`
+```python
+port = int(os.environ.get("PORT", 8080))
+```
+`int` is a built-in type. Calling it like a function (`int("9090")`) constructs an integer from a string. `HTTPServer` requires an integer port number — environment variables are always strings, so the conversion is mandatory.
+
+---
+
+#### `str(x)`
+```python
+self.send_header("Content-Length", str(len(body)))
+```
+`str` is also a built-in type. `str(14)` → `"14"`. HTTP headers are text — the Content-Length value must be a string even though the underlying value is a number.
+
+---
+
+#### `len(x)`
+```python
+str(len(body))
+```
+Returns the number of items in a sequence. For a `bytes` object, it returns the byte count. `Content-Length` must be the exact byte count of the body so the client knows when the response ends.
+
+---
+
+#### `http.server.HTTPServer((host, port), HandlerClass)`
+```python
+server = http.server.HTTPServer(("0.0.0.0", port), HelloHandler)
+```
+Creates a TCP server socket, binds it to the address and port, and puts it in the listening state. The second argument is the handler class (not an instance) — the server instantiates it fresh for each incoming connection. `HTTPServer` inherits from `socketserver.TCPServer`, which does the actual socket work.
+
+---
+
+#### `server.serve_forever()`
+```python
+server.serve_forever()
+```
+Enters a blocking event loop. Internally it calls `select()` (an OS syscall) to wait for activity on the listening socket. When a connection arrives it:
+1. Accepts the TCP handshake (completing the 3-way SYN/SYN-ACK/ACK)
+2. Reads the raw HTTP request bytes from the socket
+3. Instantiates `HelloHandler` and calls the appropriate `do_*` method
+4. Loops back to `select()`
+
+It blocks until interrupted (e.g. `KeyboardInterrupt` from Ctrl-C).
+
+---
+
+#### `server.server_close()`
+```python
+server.server_close()
+```
+Closes the listening socket. If you skip this after stopping `serve_forever()`, the OS keeps the port in `TIME_WAIT` state for ~60 seconds, which prevents restarting the server immediately on the same port.
+
+---
+
+#### `self.send_response(code)`
+```python
+self.send_response(200)
+```
+Writes the HTTP status line to the socket:
+```
+HTTP/1.1 200 OK\r\n
+```
+Also adds a `Date` header and `Server` header automatically. Must be called before any `send_header()` calls.
+
+---
+
+#### `self.send_header(name, value)`
+```python
+self.send_header("Content-Type", "text/plain")
+self.send_header("Content-Length", str(len(body)))
+```
+Writes one header line to the socket:
+```
+Content-Type: text/plain\r\n
+```
+Call this once per header. Both arguments must be strings.
+
+---
+
+#### `self.end_headers()`
+```python
+self.end_headers()
+```
+Writes the blank line (`\r\n`) that separates the headers section from the body. This is mandated by the HTTP spec — the client uses it to know where headers end and the body begins. Forgetting this call means the client never knows the headers are done and the connection hangs.
+
+---
+
+#### `self.wfile.write(body)`
+```python
+self.wfile.write(body)
+```
+`self.wfile` is a file-like object wrapping the write side of the TCP socket. Calling `.write(bytes)` pushes those bytes into the socket's send buffer, which the OS then transmits to the client over the network. The argument must be `bytes`, not `str`.
+
+---
+
+#### `print(...)`
+```python
+print(f"Serving on 0.0.0.0:{port}")
+```
+Writes to `stdout` (your terminal). Used here purely for startup information. Python's `print` adds a newline by default (`end="\n"`). f-strings (`f"..."`) embed expressions directly in the string — `{port}` is replaced with the value of the `port` variable at runtime.
+
+---
+
 ## What's Not Here Yet
-- No routing beyond `/`
-- No request body parsing
+- No request body parsing (POST data)
 - No static file serving
 - No HTTPS
 - No logging to a file

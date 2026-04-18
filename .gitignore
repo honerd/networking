@@ -9,3 +9,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Personal notes — not part of the project source
+Markdowns/cpp_notes.md
