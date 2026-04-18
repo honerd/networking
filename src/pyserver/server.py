@@ -17,6 +17,28 @@ class HelloHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()                # writes the blank line separating headers from body
             self.wfile.write(body)            # wfile wraps the TCP socket's write buffer
+
+        elif self.path == "/hello":
+            # Content-Type: text/html tells the browser to parse the bytes as HTML
+            # and render headings, paragraphs, etc. — same wire format as above,
+            # only the content-type and body differ. The browser decides what to do
+            # with the bytes based solely on this header.
+            body = (
+                b"<!DOCTYPE html>\n"
+                b"<html lang=\"en\">\n"
+                b"  <head><meta charset=\"UTF-8\"><title>Hello</title></head>\n"
+                b"  <body>\n"
+                b"    <h1>Hello, World!</h1>\n"
+                b"    <p>Served by a raw Python HTTP server.</p>\n"
+                b"  </body>\n"
+                b"</html>\n"
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         else:
             body = b"Not Found\n"
             self.send_response(404)
